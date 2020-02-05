@@ -5179,6 +5179,8 @@ __webpack_require__.r(__webpack_exports__);
 if (window.navigator.userAgent.includes('Trident')) {
   document.body.classList.add('internet-explorer');
 } // Polyfill below is from MDN
+// will ahve to investigate why the imported polyfills
+// above aren't adding "closest"
 
 
 if (!Element.prototype.matches) {
@@ -5186,7 +5188,7 @@ if (!Element.prototype.matches) {
 }
 
 if (!Element.prototype.closest) {
-  Element.prototype.closest = function (s) {
+  Element.prototype.closest = function fill(s) {
     var el = this;
 
     do {

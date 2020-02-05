@@ -148,6 +148,9 @@ function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || func
 
 function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
 
+var TEMPLATE_REGEX = /(?:{{\s*)(\*?)(_?)(\w*)(\s*}})/g;
+var FUNCTION_REGEX = /(\*?)(\w*)(?:\()(!?)((?:(?:\s*).*(?:\s*),?)*)(?:\))/g;
+
 var Component =
 /*#__PURE__*/
 function (_HTMLElement) {
@@ -162,14 +165,11 @@ function (_HTMLElement) {
     _this.config = config;
     _this.props = config.props; // TODO: make the constructor convert props into a map for easier construction
 
-    _this.templateRegEx = /(?:{{\s*)(\*?)(_?)(\w*)(\s*}})/g;
-    _this.functionRegEx = /(\*?)(\w*)(?:\()(!?)((?:(?:\s*).*(?:\s*),?)*)(?:\))/g;
     _this.bindings = new Map();
     _this.template = config.template;
     _this.hooks = config.hooks || {};
     _this.props = config.props || {};
     _this.listeners = config.listeners || [];
-    _this.runFunctionsOnHost = config.runFunctionsOnHost;
     return _this;
   }
 
@@ -214,7 +214,7 @@ function (_HTMLElement) {
       var _this3 = this;
 
       this.runHook('beforePaint');
-      var view = this.template.replace(this.templateRegEx, function (match, fromHostProps, fromOwnProps, binding) {
+      var view = this.template.replace(TEMPLATE_REGEX, function (match, fromHostProps, fromOwnProps, binding) {
         if (fromHostProps) {
           return _this3.host.props[binding];
         }
@@ -243,13 +243,19 @@ function (_HTMLElement) {
       this["on".concat(listener)] = function ($event) {
         $event.preventDefault();
         $event.stopPropagation();
-        var target = $event.target.closest("[nrcc-".concat(listener, "]"));
+        var target;
 
-        if (!target) {
-          return;
+        if ($event.target.getAttribute("nrcc-".concat(listener))) {
+          target = $event.target;
+        } else {
+          target = $event.target.closest("[nrcc-".concat(listener, "]"));
+
+          if (!target) {
+            return;
+          }
         }
 
-        var functionDetails = target.getAttribute("nrcc-".concat(listener)).matchAll(_this4.functionRegEx);
+        var functionDetails = target.getAttribute("nrcc-".concat(listener)).matchAll(FUNCTION_REGEX);
         functionDetails = Array.from(functionDetails).shift(); // TODO: find out why
         // this shift is nececarry;
 
@@ -266,9 +272,11 @@ function (_HTMLElement) {
         var args;
 
         if (singleArg) {
-          args = [functionDetails.shift()];
+          args = [functionDetails.shift().trim()];
         } else {
-          args = functionDetails.shift().split(',');
+          args = functionDetails.shift().split(',').map(function (v) {
+            return v.trim();
+          });
         } // const method = args.shift();
 
 
@@ -336,23 +344,18 @@ function () {
 
     this.hosts = new Map();
     this.apps = new Map();
-    var tempHosts = new Map();
     nrcc_data["allApps"].forEach(function (app) {
       _this.apps.set(app.name, app);
 
       app.host.forEach(function (host) {
-        if (!tempHosts.get(host)) {
-          tempHosts.set(host, new Map([[app.apdex, new Map([[app.name, app]])]]));
-        } else if (!tempHosts.get(host).get(app.apdex)) {
-          tempHosts.get(host).set(app.apdex, new Map([[app.name, app]]));
+        if (!_this.hosts.get(host)) {
+          _this.hosts.set(host, new Map([[app.apdex, new Map([[app.name, app]])]]));
+        } else if (!_this.hosts.get(host).get(app.apdex)) {
+          _this.hosts.get(host).set(app.apdex, new Map([[app.name, app]]));
         } else {
-          tempHosts.get(host).get(app.apdex).set(app.name, app);
+          _this.hosts.get(host).get(app.apdex).set(app.name, app);
         }
       });
-    }); // Order hosts alphabetically
-
-    Array.from(tempHosts.keys()).sort().forEach(function (hostName) {
-      _this.hosts.set(hostName, tempHosts.get(hostName));
     });
   }
 
@@ -548,11 +551,6 @@ function (_Component) {
       bindToHost: true,
       bindings: ['title', 'userName', '*value'],
       template: "\n        <div>\n          <h1>{{ title }}</h1>\n          <span class=\"user-details\">\n            <span>for user</span>\n            {{ userName }}\n          </span>\n        </div>\n        <div>\n          <div class=\"nrcc-checkbox\" nrcc-click=\"toggleCheckbox()\"></div>\n          <span>Show as list</span>\n        </div>\n      ",
-      hooks: {
-        afterPaint: function afterPaint() {
-          console.log('run afterPaint');
-        }
-      },
       listeners: ['click']
     }));
   }
@@ -852,9 +850,6 @@ function (_Component) {
       });
       this.confirmationModal.component.dismiss();
       this.appHostsModal.component.dismiss();
-      console.log({
-        updatedHosts: updatedHosts
-      });
       var hostsToPaint = this.dataService.updateAppHosts(this.currentApp.name, updatedHosts); // Only repaint host cards that need it:
 
       hostsToPaint.forEach(function (hostName) {
@@ -899,6 +894,7 @@ function repeat_virtual_inherits(subClass, superClass) { if (typeof superClass !
 function repeat_virtual_setPrototypeOf(o, p) { repeat_virtual_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return repeat_virtual_setPrototypeOf(o, p); }
 
 
+var BINDINGS_REGEX = /(?:{{\s*)(?:element!)(\w*)(?:\s*}})/g;
 
 var Repeater =
 /*#__PURE__*/
@@ -918,7 +914,6 @@ function (_Component) {
 
     _this.removeChild(_this.firstChild);
 
-    _this.bindingsRegEx = /(?:{{\s*)(?:element!)(\w*)(?:\s*}})/g;
     return _this;
   }
 
@@ -929,7 +924,7 @@ function (_Component) {
 
       var list = this.host.props[this.bindings.get('nrcc-elements')];
       var view = list.map(function (element, index) {
-        return _this2.template.replace(_this2.bindingsRegEx, function (match, binding) {
+        return _this2.template.replace(BINDINGS_REGEX, function (match, binding) {
           if (binding === 'self') {
             return element;
           }
